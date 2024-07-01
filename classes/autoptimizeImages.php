@@ -286,7 +286,7 @@ class autoptimizeImages
 
     public static function get_service_url_suffix()
     {
-        $suffix = '/af/U0ZIWMK109483/' . AUTOPTIMIZE_SITE_DOMAIN;
+        $suffix = '/af/ZQXTBY0109483/' . AUTOPTIMIZE_SITE_DOMAIN;
 
         return $suffix;
     }
