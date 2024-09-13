@@ -256,7 +256,7 @@ class autoptimizeExtra
         );
 
         $mode      = 'prerender';
-        $eagerness = 'eager';
+        $eagerness = 'moderate';
 
         /**
          * Filters the paths for which speculative prerendering should be disabled.
