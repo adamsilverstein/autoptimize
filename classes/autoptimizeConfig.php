@@ -880,6 +880,7 @@ if ( true === autoptimizeImages::imgopt_active() && true === apply_filters( 'aut
     public static function get_ao_extra_default_options()
     {
         $defaults = array(
+            'autoptimize_extra_checkbox_field_2' => '0',
             'autoptimize_extra_checkbox_field_1' => '0',
             'autoptimize_extra_checkbox_field_0' => '0',
             'autoptimize_extra_radio_field_4'    => '1',

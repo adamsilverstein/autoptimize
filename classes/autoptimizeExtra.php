@@ -145,6 +145,23 @@ class autoptimizeExtra
 
         return $merged;
     }
+    /**
+     * Prints the speculation rules.
+     *
+     * For browsers that do not support speculation rules yet, the `script[type="speculationrules"]` tag will be ignored.
+     *
+     * @since 1.0.0
+     */
+    public function print_speculation_rules(): void {
+        // Skip if the Performance Lab Speculative Loading plugin is already running.
+        if ( has_action( 'wp_footer', 'plsr_print_speculation_rules' ) ) {
+            return;
+        }
+        wp_print_inline_script_tag(
+            (string) wp_json_encode( $this->get_speculation_rules() ),
+            array( 'type' => 'speculationrules' )
+        );
+    }
 
     public function run_on_frontend()
     {
@@ -161,6 +178,11 @@ class autoptimizeExtra
         // Disable emojis if specified.
         if ( ! empty( $options['autoptimize_extra_checkbox_field_1'] ) ) {
             $this->disable_emojis();
+        }
+
+        // Add Speculation Rules if enabled.
+        if ( ! empty( $options['autoptimize_extra_checkbox_field_2'] ) ) {
+            add_action( 'wp_footer', array( $this, 'print_speculation_rules' ), 11 );
         }
 
         // Remove version query parameters.
@@ -205,6 +227,108 @@ class autoptimizeExtra
         if ( ! empty( $options['autoptimize_extra_checkbox_field_8'] ) ) {
             $this->disable_global_styles();
         }
+    }
+
+    /**
+     * Returns the speculation rules.
+     *
+     * Plugins with features that rely on frontend URLs to exclude from prefetching or prerendering should use the
+     * {@see 'autoptimize_speculation_rules_href_exclude_paths'} filter to ensure those URL patterns are excluded.
+     *
+     * @since n.e.x.t
+     *
+     * @return non-empty-array<string, array<int, array<string, mixed>>> Associative array of speculation rules by type.
+     */
+    public function get_speculation_rules(): array {
+        include_once( plugin_dir_path( __FILE__ ) . 'autoptimizeURLPatternPrefixer.php' );
+
+        $prefixer = new Autoptimize_URL_Pattern_Prefixer();
+
+        $base_href_exclude_paths = array(
+            $prefixer->prefix_path_pattern( '/wp-login.php', 'site' ),
+            $prefixer->prefix_path_pattern( '/wp-admin/*', 'site' ),
+            $prefixer->prefix_path_pattern( '/*\\?*(^|&)_wpnonce=*', 'home' ),
+            $prefixer->prefix_path_pattern( '/*', 'uploads' ),
+            $prefixer->prefix_path_pattern( '/*', 'content' ),
+            $prefixer->prefix_path_pattern( '/*', 'plugins' ),
+            $prefixer->prefix_path_pattern( '/*', 'template' ),
+            $prefixer->prefix_path_pattern( '/*', 'stylesheet' ),
+        );
+
+        $mode      = 'prerender';
+        $eagerness = 'eager';
+
+        /**
+         * Filters the paths for which speculative prerendering should be disabled.
+         *
+         * All paths should start in a forward slash, relative to the root document. The `*` can be used as a wildcard.
+         * By default, the array includes `/wp-login.php` and `/wp-admin/*`.
+         *
+         * If the WordPress site is in a subdirectory, the exclude paths will automatically be prefixed as necessary.
+         *
+         * @since n.e.x.t
+         *
+         * @param string[] $href_exclude_paths Additional paths to disable speculative prerendering for. The base exclude paths,
+         *                                     such as for wp-admin, cannot be removed.
+         * @param string   $mode               Mode used to apply speculative prerendering. Either 'prefetch' or 'prerender'.
+         */
+        $href_exclude_paths = (array) apply_filters( 'autoptimize_speculation_rules_href_exclude_paths', array(), $mode );
+
+        // Ensure that:
+        // 1. There are no duplicates.
+        // 2. The base paths cannot be removed.
+        // 3. The array has sequential keys (i.e. array_is_list()).
+        $href_exclude_paths = array_values(
+            array_unique(
+                array_merge(
+                    $base_href_exclude_paths,
+                    array_map(
+                        static function ( string $href_exclude_path ) use ( $prefixer ): string {
+                            return $prefixer->prefix_path_pattern( $href_exclude_path );
+                        },
+                        $href_exclude_paths
+                    )
+                )
+            )
+        );
+
+        $rules = array(
+            array(
+                'source'    => 'document',
+                'where'     => array(
+                    'and' => array(
+                        // Include any URLs within the same site.
+                        array(
+                            'href_matches' => $prefixer->prefix_path_pattern( '/*' ),
+                        ),
+                        // Except for WP login and admin URLs.
+                        array(
+                            'not' => array(
+                                'href_matches' => $href_exclude_paths,
+                            ),
+                        ),
+                        // Also exclude rel=nofollow links, as plugins like WooCommerce use that on their add-to-cart links.
+                        array(
+                            'not' => array(
+                                'selector_matches' => 'a[rel~="nofollow"]',
+                            ),
+                        ),
+                    ),
+                ),
+                'eagerness' => $eagerness,
+            ),
+        );
+
+        // Allow adding a class on any links to prevent prerendering.
+        if ( 'prerender' === $mode ) {
+            $rules[0]['where']['and'][] = array(
+                'not' => array(
+                    'selector_matches' => '.no-prerender',
+                ),
+            );
+        }
+
+        return array( $mode => $rules );
     }
 
     public function filter_remove_gfonts_dnsprefetch( $urls, $relation_type )
@@ -573,6 +697,13 @@ class autoptimizeExtra
                     <label><input type='checkbox' name='autoptimize_extra_settings[autoptimize_extra_checkbox_field_1]' <?php if ( ! empty( $options['autoptimize_extra_checkbox_field_1'] ) && '1' === $options['autoptimize_extra_checkbox_field_1'] ) { echo 'checked="checked"'; } ?> value='1'><?php esc_html_e( 'Removes WordPress\' core emojis\' inline CSS, inline JavaScript, and an otherwise un-autoptimized JavaScript file.', 'autoptimize' ); ?></label>
                 </td>
             </tr>
+            <tr>
+                <th scope="row"><?php esc_html_e( 'Speculation Rules', 'autoptimize' ); ?></th>
+                <td>
+                    <label><input type='checkbox' name='autoptimize_extra_settings[autoptimize_extra_checkbox_field_2]' <?php if ( ! empty( $options['autoptimize_extra_checkbox_field_2'] ) && '1' === $options['autoptimize_extra_checkbox_field_2'] ) { echo 'checked="checked"'; } ?> value='1'><?php esc_html_e( 'Pre-render links as users hover over them, resulting in potentially instant navigations.', 'autoptimize' ); ?></label>
+                </td>
+            </tr>
+
             <tr>
                 <th scope="row"><?php esc_html_e( 'Remove query strings from static resources', 'autoptimize' ); ?></th>
                 <td>
